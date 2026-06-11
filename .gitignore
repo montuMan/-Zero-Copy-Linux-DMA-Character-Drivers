@@ -1,0 +1,24 @@
+# Linux kernel out-of-tree module build artefacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.symvers
+*.order
+.module-common.o
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Kernel build helper files
+.*.cmd
+*.d
+
+# User-space test harness binary
+user_app
+
+# Editor swap / backup files
+*~
+*.swp
+\#*\#
