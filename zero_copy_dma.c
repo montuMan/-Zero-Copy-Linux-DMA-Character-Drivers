@@ -92,7 +92,7 @@
  * Module metadata
  * ----------------------------------------------------------------------- */
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Zero-Copy DMA Driver Authors");
 MODULE_DESCRIPTION("Zero-Copy Scatter-Gather DMA Character Driver (Software Mock)");
 MODULE_VERSION("1.0");
@@ -230,7 +230,7 @@ static void zcd_fill_pattern(struct zcd_frame_slot *slot,
 	u32  i;
 
 	for (i = 0; i < ZCD_FRAME_SIZE; i++)
-		buf[i] = (u8)((seq ^ (u64)slot_idx ^ (u64)i) & 0xFF);
+		buf[i] = (u8)((seq ^ (u64)slot_idx ^ (u64)i) & 0xFFULL);
 }
 
 /* -----------------------------------------------------------------------
@@ -636,6 +636,10 @@ static int zcd_mmap(struct file *filp, struct vm_area_struct *vma)
 	if (vma->vm_pgoff != 0)
 		return -EINVAL;
 
+	/* Disallow executable mappings (security best practice). */
+	if (vma->vm_flags & VM_EXEC)
+		return -EPERM;
+
 	/*
 	 * VM_DONTEXPAND: prevents enlarging via mremap(2).
 	 * VM_DONTDUMP  : excludes from core dumps.
@@ -768,7 +772,14 @@ static long zcd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -ECANCELED;
 		}
 
-		fi.sequence   = d->slots[ridx].sequence;
+		/*
+		 * Read sequence with READ_ONCE to prevent race with producer.
+		 * The smp_load_acquire on write_idx above provides the
+		 * necessary ordering guarantee that the sequence field is
+		 * visible, but we use READ_ONCE for consistency and to
+		 * prevent the compiler from re-reading this value.
+		 */
+		fi.sequence   = READ_ONCE(d->slots[ridx].sequence);
 		fi.index      = (u32)ridx;
 		fi.size_bytes = (u32)ZCD_FRAME_SIZE;
 
@@ -791,8 +802,13 @@ static long zcd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		ridx = READ_ONCE(d->read_idx);
 		if ((unsigned int)frame_idx != ridx) {
-			pr_warn("zcd: RELEASE_FRAME: got index %d, "
-				"expected %u\n", frame_idx, ridx);
+			/*
+			 * Strict ordering: user must RELEASE each frame in
+			 * the order it was acquired. Out-of-order releases
+			 * are rejected to prevent ring corruption.
+			 */
+			pr_warn_ratelimited("zcd: RELEASE_FRAME: got index %d, "
+					    "expected %u\n", frame_idx, ridx);
 			return -EINVAL;
 		}
 

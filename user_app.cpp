@@ -88,6 +88,13 @@ static constexpr uint32_t CHECK_BYTES = 4096U;
 static bool check_pattern(const uint8_t *buf, uint32_t len,
                            uint32_t slot, uint64_t seq)
 {
+    if (len > ZCD_FRAME_SIZE) {
+        std::fprintf(stderr,
+            "  [FAIL] check_pattern: len %u exceeds frame size %u\n",
+            len, ZCD_FRAME_SIZE);
+        return false;
+    }
+
     for (uint32_t i = 0; i < len; ++i) {
         uint8_t expected = static_cast<uint8_t>((seq ^ slot ^ i) & 0xFF);
         if (buf[i] != expected) {
